@@ -1,0 +1,87 @@
+name: Build JustMusic! Windows 10-11
+
+on:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows x64 executable
+    runs-on: windows-2022
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: x64
+
+      - name: Install JustMusic! dependencies and packager
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller pygame Pillow mutagen
+
+      - name: Check Python source syntax
+        shell: pwsh
+        run: |
+          python -m py_compile JustMusic_Windows_6.0.7.py
+
+      - name: Create Windows icon from repository icon.png
+        shell: pwsh
+        run: |
+          if (Test-Path 'icon.png') {
+            python -c "from PIL import Image; im = Image.open('icon.png'); im.convert('RGBA').save('JustMusic.ico', format='ICO', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])"
+          } else {
+            Write-Host 'icon.png not found; PyInstaller default icon will be used.'
+          }
+
+      - name: Build portable Windows application
+        shell: pwsh
+        run: |
+          $params = @('--noconfirm', '--clean', '--windowed', '--onedir', '--name', 'JustMusic',
+                      '--collect-all', 'pygame', '--collect-all', 'mutagen',
+                      '--hidden-import', 'PIL._tkinter_finder')
+          if (Test-Path 'JustMusic.ico') { $params += @('--icon', 'JustMusic.ico') }
+          $params += 'JustMusic_Windows_6.0.7.py'
+          python -m PyInstaller @params
+          if (-not (Test-Path 'dist/JustMusic/JustMusic.exe')) {
+            throw 'Missing portable EXE: dist/JustMusic/JustMusic.exe'
+          }
+
+      - name: Package portable ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive -Path 'dist/JustMusic' -DestinationPath 'JustMusic-Windows-6.0.7-Portable.zip' -Force
+
+      - name: Build single-file Windows executable
+        shell: pwsh
+        run: |
+          $params = @('--noconfirm', '--clean', '--windowed', '--onefile', '--name', 'JustMusic-6.0.7',
+                      '--distpath', 'dist-onefile', '--workpath', 'build-onefile',
+                      '--specpath', 'spec-onefile', '--collect-all', 'pygame',
+                      '--collect-all', 'mutagen', '--hidden-import', 'PIL._tkinter_finder')
+          if (Test-Path 'JustMusic.ico') { $params += @('--icon', 'JustMusic.ico') }
+          $params += 'JustMusic_Windows_6.0.7.py'
+          python -m PyInstaller @params
+          if (-not (Test-Path 'dist-onefile/JustMusic-6.0.7.exe')) {
+            throw 'Missing single EXE: dist-onefile/JustMusic-6.0.7.exe'
+          }
+
+      - name: Upload portable Windows ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: JustMusic-Windows-6.0.7-Portable
+          path: JustMusic-Windows-6.0.7-Portable.zip
+          if-no-files-found: error
+
+      - name: Upload standalone Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: JustMusic-Windows-6.0.7-EXE
+          path: dist-onefile/JustMusic-6.0.7.exe
+          if-no-files-found: error
